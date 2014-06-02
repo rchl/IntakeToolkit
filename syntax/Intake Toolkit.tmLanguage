@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>name</key>
+	<string>IWillDo View</string>
+	<key>patterns</key>
+	<array>
+		<dict>
+			<key>name</key>
+			<string>comment text.iwilldo.item text.iwilldo.item.completed</string>
+			<key>match</key>
+			<string>^  √.+[\n]</string>
+		</dict>
+		<dict>
+			<key>name</key>
+			<string>markup.deleted text.iwilldo.item text.iwilldo.item.unclaimed</string>
+			<key>match</key>
+			<string>^    \[\].+[\n]</string>
+		</dict>
+		<dict>
+			<key>name</key>
+			<string>markup.inserted text.iwilldo.item text.iwilldo.item.claimed</string>
+			<key>match</key>
+			<string>^    \[.+\].+[\n]</string>
+		</dict>
+	</array>
+	<key>scopeName</key>
+	<string>text.iwilldo</string>
+	<key>uuid</key>
+	<string>2a37add9-1219-4114-b232-4bd422b84c1e</string>
+</dict>
+</plist>
