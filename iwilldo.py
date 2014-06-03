@@ -283,7 +283,8 @@ class WillDoListItemDiffCommand(sublime_plugin.TextCommand):
         copied_from_path = copied_from_path.replace('chromium/src/', '')
         command = ['git',
                    'diff',
-                   '%s..HEAD' % copied_info['last_synchronized'],
+                   '%s..%s' % (copied_info['last_synchronized'],
+                               iwilldolist.get_upstream_sha()),
                    '--exit-code',
                    '--',
                    copied_from_path]
