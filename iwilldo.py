@@ -279,8 +279,10 @@ class WillDoListItemDiffCommand(sublime_plugin.TextCommand):
         # copied_from_path relative to the desktop repo while ExternalInfo
         # returns absolute path. Removing 'chromium/src/' part from the
         # EmbeddedInfo should make it work. Absolute path is fine.
-        copied_from_path = copied_info['copied_from_path']
-        copied_from_path = copied_from_path.replace('chromium/src/', '')
+        # To make things worse, on Mac the path is absolute...
+        copied_from_path = normalize_path(copied_info['copied_from_path'])
+        copied_from_path = copied_from_path.replace(
+            iwilldolist.get_reporoot() + '/', '').replace('chromium/src/', '')
         command = ['git',
                    'diff',
                    '%s..%s' % (copied_info['last_synchronized'],
