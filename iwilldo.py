@@ -12,6 +12,7 @@ import tempfile
 import threading
 import urllib
 from functools import partial
+from time import gmtime, strftime
 
 import sublime
 import sublime_plugin
@@ -92,16 +93,23 @@ class WillDoListShowCommand(sublime_plugin.TextCommand):
       self.view.window().focus_view(iwilldolist.get_view())
       return
 
+    # Possibly there is inactive view somewhere. Revive it.
+    for v in view.window().views():
+      if v.settings().has('is_will_do_list_view'):
+        self.view.window().focus_view(v)
+        v.run_command('will_do_list_start_update_interval')
+        return
+
     new_view = self.view.window().new_file()
     new_view.set_syntax_file(
         '%s/syntax/Intake Toolkit.tmLanguage' % PACKAGE_PATH)
     new_view.insert(edit, 0, 'Loading...')
     new_view.set_read_only(True)
-    new_view.run_command('will_do_list_start_update_interval')
     new_view.settings().set('line_numbers', False)
     new_view.settings().set('rulers', [])
     new_view.settings().set('draw_white_space', 'none')
     new_view.settings().set('draw_indent_guides', False)
+    new_view.run_command('will_do_list_start_update_interval')
 
 
 class WillDoListStartUpdateIntervalCommand(sublime_plugin.TextCommand):
@@ -147,6 +155,7 @@ class WillDoListUpdateWithDataCommand(sublime_plugin.TextCommand):
       view.set_name(name)
       self._add_line(name)
       self._add_line('Clean upstream: %s' % data['base_commit'])
+      self._add_line('Last updated: %s' % strftime("%d %b %H:%M:%S", gmtime()))
       self._add_line('')
       self._add_line('Keyboard shortcuts:')
       self._add_line('  c - claim/unclaim the file(s)')
@@ -341,6 +350,12 @@ class WriteGitDiffToViewCommand(sublime_plugin.TextCommand):
 
 
 class EventObserver(sublime_plugin.EventListener):
+  def on_activated(self, view):
+    # Reuse existing IWillDo view.
+    if (view.settings().has('is_will_do_list_view')
+            and iwilldolist.get_view() is None):
+      view.run_command('will_do_list_start_update_interval')
+
   def on_pre_close(self, view):
     iwilldolist.on_view_closing(view)
 
@@ -390,6 +405,7 @@ class IWillDoList(object):
 
   def initialize(self, view):
     self._view = view
+    self._view.settings().set('is_will_do_list_view', True)
     self._username = view.settings().get(PREF_NAME_USERNAME)
     self._reporoot = view.settings().get(PREF_NAME_REPOROOT)
     self._auth_token = view.settings().get(PREF_NAME_AUTHTOKEN)
