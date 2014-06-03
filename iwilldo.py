@@ -194,17 +194,24 @@ class WillDoListUpdateWithDataCommand(sublime_plugin.TextCommand):
         regions_processed.append(lines_regions[line])
       else:
         regions_unprocessed.append(lines_regions[line])
-    # TODO(rchlodnicki): There is a bug with rendering gutter icons so this
-    # either doesn't work or works randomly.
+    # TODO(rchlodnicki): There is a bug with rendering gutter icons with scope
+    # tinting applied so I'm using own graphics right now. Otherwise I could
+    # use built-in with scopes like comment, markup.inserted, markup.deleted.
     # http://www.sublimetext.com/forum/viewtopic.php?f=2&t=16214
-    view.add_regions('files_processed', regions_processed,
-                     scope='markup.inserted', icon='circle',
+    view.add_regions('files_processed',
+                     regions_processed,
+                     scope='whatever',
+                     icon='%s/images/circle-green.png' % PACKAGE_PATH,
                      flags=sublime.HIDDEN)
-    view.add_regions('files_unprocessed', regions_unprocessed,
-                     scope='comment', icon='circle',
+    view.add_regions('files_unprocessed',
+                     regions_unprocessed,
+                     scope='whatever',
+                     icon='%s/images/circle-gray.png' % PACKAGE_PATH,
                      flags=sublime.HIDDEN)
-    view.add_regions('files_invalid', regions_invalid,
-                     scope='markup.deleted', icon='circle',
+    view.add_regions('files_invalid',
+                     regions_invalid,
+                     scope='whatever',
+                     icon='%s/images/circle-red.png' % PACKAGE_PATH,
                      flags=sublime.HIDDEN)
 
 
