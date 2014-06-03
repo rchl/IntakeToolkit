@@ -117,6 +117,7 @@ class WillDoListUpdateWithDataCommand(sublime_plugin.TextCommand):
     super().__init__(*args, **kwargs)
     self._output = []
     self._current_line = 0
+    self._last_viewport_position = (0.0, 0.0)
 
   def _reset_line_data(self):
     self._current_line = 0
@@ -129,6 +130,10 @@ class WillDoListUpdateWithDataCommand(sublime_plugin.TextCommand):
 
   def _get_output(self):
     return '\n'.join(self._output)
+
+  def _restore_viewport_scroll(self):
+    if self.view.viewport_position()[0] > self._last_viewport_position[0]:
+      self.view.set_viewport_position(self._last_viewport_position, False)
 
   def run(self, edit, data):
     view = self.view
@@ -163,7 +168,12 @@ class WillDoListUpdateWithDataCommand(sublime_plugin.TextCommand):
       iwilldolist.set_upstream_sha(data['base_commit'])
 
     view.set_read_only(False)
+    self._last_viewport_position = view.viewport_position()
     view.replace(edit, sublime.Region(0, view.size()), self._get_output())
+    # Viewport might scroll horizontally after replacing the content. Restore it
+    # to the previous position. Need to do it from the timeout as it's not
+    # updated synchronously.
+    sublime.set_timeout(self._restore_viewport_scroll, 0)
     view.set_read_only(True)
 
     if not view.is_scratch():
