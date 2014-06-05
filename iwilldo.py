@@ -20,7 +20,7 @@ import sublime_plugin
 API_HOST = 'https://browser-resources.oslo.osa/'
 API_LATEST_LIST_URL = API_HOST + 'api/iwilldo/combined/latest'
 API_UPDATE_ITEM_URL = API_HOST + 'api/iwilldo/items/%s/'
-API_USER_TOKEN_URL = API_HOST + 'repatch/api/obtain-token?format=json'
+API_USER_TOKEN_URL = API_HOST + 'api/obtain-token?format=json'
 # Interval (in ms) at which the list is updated when the buffer is active.
 CHECK_INTERVAL = 15000
 # Pref name constants.
