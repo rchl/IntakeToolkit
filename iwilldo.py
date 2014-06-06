@@ -55,6 +55,17 @@ def normalize_path(path):
   return path.strip().replace('\\', '/')
 
 
+def get_item_path(item):
+  """Returns absolute, normalized path to the given item.
+
+  Args:
+      item: The object which contains file item information, including the
+      'name' property bearing item's path relative to the repo root.
+  """
+  return normalize_path(os.path.join(iwilldolist.get_reporoot(),
+                                     re.sub(r' \(ERROR\)$', '', item['name'])))
+
+
 def run_process(command, working_dir, dont_block=False):
   """Wrapper around subprocess that hides console window on Windows."""
   startupinfo = None
@@ -261,8 +272,7 @@ class WillDoListItemOpenCommand(sublime_plugin.TextCommand):
   def run(self, edit):
     view = self.view
     for item in iwilldolist.get_items_for_selection(view):
-      view.window().open_file(
-          os.path.join(iwilldolist.get_reporoot(), item['name']))
+      view.window().open_file(get_item_path(item))
 
 
 class WillDoListItemOpenUpstreamCommand(sublime_plugin.TextCommand):
@@ -285,7 +295,7 @@ class WillDoListItemMergeCommand(sublime_plugin.TextCommand):
                        # built-in python and system installed one.
             'chromium_intake.py',
             '--end-commit', iwilldolist.get_upstream_sha(),
-            '--dest', os.path.join(iwilldolist.get_reporoot(), item['name']),
+            '--dest', get_item_path(item),
             '--mergetool=p4merge',
             '--tempdir', tempfile.gettempdir()
         ]
@@ -433,10 +443,10 @@ class IWillDoList(object):
     return self._auth_token
 
   def get_copied_info_for_item(self, item):
-    absolute_path = os.path.join(self._reporoot, item['name'])
+    absolute_path = get_item_path(item)
     if os.path.exists(absolute_path):
       return CopiedFile.create(
-          normalize_path(absolute_path),
+          absolute_path,
           normalize_path(os.path.join(self._reporoot, 'chromium', 'src')),
           allow_caching=False)
     return None
