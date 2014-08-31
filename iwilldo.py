@@ -12,7 +12,7 @@ import tempfile
 import threading
 import urllib
 from functools import partial
-from time import gmtime, strftime
+from time import gmtime, sleep, strftime
 
 import sublime
 import sublime_plugin
@@ -21,8 +21,8 @@ API_HOST = 'https://browser-resources.oslo.osa/'
 API_LATEST_LIST_URL = API_HOST + 'api/iwilldo/combined/latest'
 API_UPDATE_ITEM_URL = API_HOST + 'api/iwilldo/items/%s/'
 API_USER_TOKEN_URL = API_HOST + 'api/obtain-token?format=json'
-# Interval (in ms) at which the list is updated when the buffer is active.
-CHECK_INTERVAL = 15000
+# Interval (in seconds) at which the list is updated when the buffer is active.
+CHECK_INTERVAL_SEC = 15
 # Pref name constants.
 PREF_NAME_USERNAME = 'will_do_list_username'
 PREF_NAME_REPOROOT = 'will_do_list_repo_root'
@@ -108,7 +108,7 @@ class WillDoListShowCommand(sublime_plugin.TextCommand):
     for v in view.window().views():
       if v.settings().has('is_will_do_list_view'):
         self.view.window().focus_view(v)
-        v.run_command('will_do_list_start_update_interval')
+        # Focusing takes care of starting the update interval.
         return
 
     new_view = self.view.window().new_file()
@@ -126,7 +126,7 @@ class WillDoListShowCommand(sublime_plugin.TextCommand):
 class WillDoListStartUpdateIntervalCommand(sublime_plugin.TextCommand):
   def run(self, edit):
     iwilldolist.initialize(self.view)
-    iwilldolist.trigger_update()
+    iwilldolist.trigger_update(repeating=True)
 
 
 class WillDoListUpdateWithDataCommand(sublime_plugin.TextCommand):
@@ -261,11 +261,11 @@ class WillDoListItemToggleClaimCommand(sublime_plugin.TextCommand):
   def run(self, edit):
     for item in iwilldolist.get_items_for_selection(self.view):
       new_claimed_by = self._toggle_username_in(item['claimed_by'])
-      NetworkWorkerThread(
+      iwilldolist.make_request(
           API_UPDATE_ITEM_URL % item['id'],
           'PATCH',
           bytearray('{"claimed_by": "%s"}' % new_claimed_by, 'utf-8'),
-          self._on_claim_updated).start()
+          self._on_claim_updated)
 
 
 class WillDoListItemOpenCommand(sublime_plugin.TextCommand):
@@ -370,36 +370,45 @@ class EventObserver(sublime_plugin.EventListener):
     iwilldolist.on_view_closing(view)
 
 
-class NetworkWorkerThread(threading.Thread):
-  def __init__(self, url, method, data, callback):
-    super(NetworkWorkerThread, self).__init__()
-    self._url = url
-    self._method = method
-    self._data = data
-    self._callback = callback
-
-  def _fetch_url(self, url):
-    try:
-      data = urllib.request.urlopen(url).read().decode('utf-8')
-    except urllib.error.URLError as ex:
-      data = '{"error": "Failed retrieving data. %s"}' % ex.reason
-    return data
-
-  def run(self):
-    headers = {
-        'Content-Type': 'application/json',
-        'Authorization': 'Token %s' % iwilldolist.get_auth_token()
-    }
-    request = urllib.request.Request(self._url,
-                                     data=self._data,
-                                     headers=headers,
-                                     method=self._method)
-    data = json.loads(self._fetch_url(request))
-    sublime.set_timeout(partial(self._callback, data))
-
-
 class IWillDoList(object):
   """Global class that controls the plugin."""
+
+  class NetworkWorkerThread(threading.Thread):
+    def __init__(self, url, method, data, auth_token, callback, repeating):
+      super(IWillDoList.NetworkWorkerThread, self).__init__()
+      self._url = url
+      self._method = method
+      self._data = data
+      self._callback = callback
+      self._repeating = repeating
+      self._headers = {
+          'Content-Type': 'application/json',
+          'Authorization': 'Token %s' % auth_token
+      }
+      self._stop_event = threading.Event()
+
+    def _fetch_url(self, url):
+      try:
+        data = urllib.request.urlopen(url).read().decode('utf-8')
+      except urllib.error.URLError as ex:
+        data = '{"error": "Failed retrieving data. %s"}' % ex.reason
+      return data
+
+    def stop(self):
+      self._stop_event.set()
+
+    def run(self):
+      while True:
+        request = urllib.request.Request(self._url,
+                                         data=self._data,
+                                         headers=self._headers,
+                                         method=self._method)
+        data = json.loads(self._fetch_url(request))
+        sublime.set_timeout(partial(self._callback, data))
+        if self._repeating:
+          sleep(CHECK_INTERVAL_SEC)
+        if not self._repeating or self._stop_event.is_set():
+          break
 
   def __init__(self):
     # The View that is currently showing the IWillDo list. Only one such view
@@ -411,7 +420,17 @@ class IWillDoList(object):
     self._auth_token = ''
     self._reporoot = ''
     self._upstream_sha = ''
+    self._repeating_thread = None
     self._initialized = False
+
+  def __del__(self):
+    self._view = None
+    self._stop_repeating_thread_if_started()
+
+  def _stop_repeating_thread_if_started(self):
+    if self._repeating_thread:
+      self._repeating_thread.stop()
+      self._repeating_thread = None
 
   def initialize(self, view):
     self._view = view
@@ -427,7 +446,6 @@ class IWillDoList(object):
                                    'desktop', 'tools', 'libintake'))
       global CopiedFile
       from copied_file import CopiedFile
-
     self._initialized = True
 
   def get_view(self):
@@ -438,9 +456,6 @@ class IWillDoList(object):
 
   def get_reporoot(self):
     return self._reporoot
-
-  def get_auth_token(self):
-    return self._auth_token
 
   def get_copied_info_for_item(self, item):
     absolute_path = get_item_path(item)
@@ -474,19 +489,44 @@ class IWillDoList(object):
   def on_view_closing(self, view):
     if self._view and self._view.id() == view.id():
       self._view = None
+      self._stop_repeating_thread_if_started()
 
-  def trigger_update(self):
+  def make_request(self, URL, method, data, callback):
+    IWillDoList.NetworkWorkerThread(
+        URL, method, data, self._auth_token, callback, False).start()
+
+  def trigger_update(self, repeating=False):
     """Triggers update of the list on the network thread."""
-    if self._view:
-      NetworkWorkerThread(API_LATEST_LIST_URL,
-                          'GET',
-                          None,
-                          self._on_data_fetched).start()
 
-  def _on_data_fetched(self, data):
+    # Can't 100% rely on on_pre_close event firing. It doesn't when closing
+    # window for example. Not sure if checking buffer_id is the official way for
+    # checking if the view was closed...
+    if self._view and self._view.buffer_id() == 0:
+      self.on_view_closing(self._view)
+
+    if self._view:
+      thread = IWillDoList.NetworkWorkerThread(
+          API_LATEST_LIST_URL,
+          'GET',
+          None,
+          self._auth_token,
+          IWillDoList.on_data_fetched,
+          repeating)
+      thread.start()
+      if repeating:
+        self._stop_repeating_thread_if_started()
+        self._repeating_thread = thread
+
+  @staticmethod
+  def on_data_fetched(data):
+    """Global callback function instead of a IWillDoList class member to avoid
+       locking the class instance when it needs to be garbage collected."""
+
+    iwilldolist.update_view_with_data(data)
+
+  def update_view_with_data(self, data):
     if self._view:
       self._view.run_command('will_do_list_update_with_data', {'data': data})
-      sublime.set_timeout(self.trigger_update, CHECK_INTERVAL)
 
 
 iwilldolist = IWillDoList()
