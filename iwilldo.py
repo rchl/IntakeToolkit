@@ -253,11 +253,17 @@ class WillDoListUpdateWithDataCommand(sublime_plugin.TextCommand):
                      flags=sublime.DRAW_NO_FILL | sublime.DRAW_NO_OUTLINE |
                          sublime.DRAW_SOLID_UNDERLINE)
 
-    # Add gutter icons based on last-synchronized tag of the item.
+
+class WillDoListUpdateGutterMarksCommand(sublime_plugin.TextCommand):
+  """Adds gutter icons based on last-synchronized tag of the item."""
+
+  def run(self, edit):
+    view = self.view
     regions_processed = []
     regions_unprocessed = []
     regions_invalid = []
     lines_regions = view.lines(sublime.Region(0, view.size()))
+    line_to_item_mapping = iwilldolist.get_line_to_item_mapping()
     for line in line_to_item_mapping:
       copied = iwilldolist.get_copied_info_for_item(line_to_item_mapping[line])
       if not copied:
@@ -486,12 +492,29 @@ class IWillDoList(object):
         if not self._repeating or self._stop_event.is_set():
           break
 
+  class CopiedInfoFetcherFileIOThread(threading.Thread):
+    def __init__(self, file_paths, reporoot, callback):
+      super(IWillDoList.CopiedInfoFetcherFileIOThread, self).__init__()
+      self._file_paths = file_paths
+      self._reporoot = reporoot
+      self._callback = callback
+
+    def run(self):
+      data = {}
+      for file_path in self._file_paths:
+        if os.path.exists(file_path):
+          data[file_path] = CopiedFile.create(
+              file_path, self._reporoot, allow_caching=False)
+      sublime.set_timeout(partial(self._callback, data))
+
   def __init__(self):
     # The View that is currently showing the IWillDo list. Only one such view
     # can exist at a time.
     self._view = None
     # Mapping from the line number in generated IWillDo list to an item object.
     self._line_to_item_mapping = {}
+    # A dictionary of path: CopiedInfo values.
+    self._copied_info_data = {}
     self._username = ''
     self._auth_token = ''
     self._reporoot = ''
@@ -539,12 +562,12 @@ class IWillDoList(object):
 
   def get_copied_info_for_item(self, item):
     absolute_path = get_item_path(item)
-    if os.path.exists(absolute_path):
-      return CopiedFile.create(
-          absolute_path,
-          normalize_path(os.path.join(self._reporoot, 'chromium', 'src')),
-          allow_caching=False)
+    if absolute_path in self._copied_info_data:
+      return self._copied_info_data[absolute_path]
     return None
+
+  def get_line_to_item_mapping(self):
+    return self._line_to_item_mapping
 
   def set_line_to_item_mapping(self, mapping):
     self._line_to_item_mapping = mapping
@@ -603,10 +626,24 @@ class IWillDoList(object):
        locking the class instance when it needs to be garbage collected."""
 
     iwilldolist.update_view_with_data(data)
+    iwilldolist.update_copied_info_data(data)
 
   def update_view_with_data(self, data):
     if self._view:
       self._view.run_command('will_do_list_update_with_data', {'data': data})
+
+  def update_copied_info_data(self, data):
+    paths = []
+    for group in data['groups']:
+      for item in group['items']:
+        paths.append(get_item_path(item))
+    IWillDoList.CopiedInfoFetcherFileIOThread(
+        paths, self._reporoot, self._on_copied_info_updated).start()
+
+  def _on_copied_info_updated(self, data):
+    self._copied_info_data = data
+    if self._view:
+      self._view.run_command('will_do_list_update_gutter_marks')
 
 
 iwilldolist = IWillDoList()
