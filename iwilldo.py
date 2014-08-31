@@ -90,7 +90,8 @@ def run_process(command, working_dir, dont_block=False):
 
 class WillDoListShowCommand(sublime_plugin.TextCommand):
   def run(self, edit):
-    view = self.view
+    # Not using self.view as it might be a console panel for example.
+    view = self.view.window().active_view()
     if (not view.settings().has(PREF_NAME_USERNAME) or not
             view.settings().has(PREF_NAME_REPOROOT) or not
             view.settings().has(PREF_NAME_AUTHTOKEN)):
