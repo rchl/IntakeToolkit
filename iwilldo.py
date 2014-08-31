@@ -105,6 +105,18 @@ def get_item_path(item):
                                      re.sub(r' \(ERROR\)$', '', item['name'])))
 
 
+def fixup_upstream_path(path):
+  """Modifies the upstream path so that it's relative to the reporoot."""
+  # TODO(rchlodnicki): This is a bit messy. EmbeddedInfo returns
+  # copied_from_path relative to the desktop repo (even for upstream files)
+  # while ExternalInfo returns absolute path. We'll force the path to be
+  # absolute so that it always works.
+  path = normalize_path(path).replace(iwilldolist.get_reporoot() + '/', '')
+  if not path.startswith('chromium/src/'):
+    path = 'chromium/src/%s' % path
+  return '%s/%s' % (iwilldolist.get_reporoot(), path)
+
+
 def run_process(command, working_dir, dont_block=False):
   """Wrapper around subprocess that hides console window on Windows."""
   startupinfo = None
@@ -328,8 +340,8 @@ class WillDoListItemOpenUpstreamCommand(sublime_plugin.TextCommand):
     view = self.view
     for item in iwilldolist.get_items_for_selection(view):
       info = iwilldolist.get_copied_info_for_item(item)
-      view.window().open_file(
-          os.path.join(iwilldolist.get_reporoot(), info['copied_from_path']))
+      if info:
+        view.window().open_file(fixup_upstream_path(info['copied_from_path']))
 
 
 class WillDoListItemMergeCommand(sublime_plugin.TextCommand):
@@ -359,21 +371,13 @@ class WillDoListItemDiffCommand(sublime_plugin.TextCommand):
     for item in iwilldolist.get_items_for_selection(view):
       copied_info = iwilldolist.get_copied_info_for_item(item)
       if copied_info:
-        # TODO(rchlodnicki): This is a bit messy. EmbeddedInfo returns
-        # copied_from_path relative to the desktop repo while ExternalInfo
-        # returns absolute path. Removing 'chromium/src/' part from the
-        # EmbeddedInfo should make it work. Absolute path is fine.
-        # To make things worse, on Mac the path is absolute...
-        copied_from_path = normalize_path(copied_info['copied_from_path'])
-        copied_from_path = copied_from_path.replace(
-            iwilldolist.get_reporoot() + '/', '').replace('chromium/src/', '')
         command = ['git',
                    'diff',
                    '%s..%s' % (copied_info['last_synchronized'],
                                iwilldolist.get_upstream_sha()),
                    '--exit-code',
                    '--',
-                   copied_from_path]
+                   fixup_upstream_path(copied_info['copied_from_path'])]
         chromium_src = normalize_path(
             os.path.join(iwilldolist.get_reporoot(), 'chromium', 'src'))
         (output, returncode) = run_process(command, chromium_src)
@@ -402,7 +406,7 @@ class WillDoListItemCompareCommand(sublime_plugin.TextCommand):
       if copied_info:
         run_process([iwilldolist.get_mergetool(),
                      get_item_path(item),
-                     copied_info['copied_from_path']],
+                     fixup_upstream_path(copied_info['copied_from_path'])],
                     iwilldolist.get_reporoot(),
                     dont_block=True)
 
@@ -542,8 +546,8 @@ class IWillDoList(object):
       # Import libintake package from the desktop tools dir. We have to do it
       # only once. We must also make the imported module be visible in the
       # global scope.
-      sys.path.append(os.path.join(view.settings().get(PREF_NAME_REPOROOT),
-                                   'desktop', 'tools', 'libintake'))
+      sys.path.append(
+          os.path.join(self._reporoot, 'desktop', 'tools', 'libintake'))
       global CopiedFile
       from copied_file import CopiedFile
     self._initialized = True
