@@ -19,7 +19,7 @@
   {"keys": ["d"],
    "command": "will_do_list_item_diff",
    "context": [{"key": "selector", "operand": "text.iwilldo"}]},
-  {"keys": ["D"],
+  {"keys": ["ctrl+d"],
    "command": "will_do_list_item_compare",
    "context": [{"key": "selector", "operand": "text.iwilldo"}]},
   {"keys": ["u"],

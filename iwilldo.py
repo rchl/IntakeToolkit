@@ -29,6 +29,44 @@ PREF_NAME_REPOROOT = 'will_do_list_repo_root'
 PREF_NAME_AUTHTOKEN = 'will_do_list_auth_token'
 PREF_NAME_MERGETOOL = 'will_do_list_merge_tool'
 PACKAGE_PATH = 'Packages/IntakeToolkit'
+# Supported keyboard shortcuts.
+COMMANDS = [
+    [
+        'c',
+        'claim/unclaim the file(s)',
+        'will_do_list_item_toggle_claim'
+    ],
+    [
+        'm',
+        'run merge tool on the file(s)',
+        'will_do_list_item_merge'
+    ],
+    [
+        'd',
+        'show diff of the upstream changes',
+        'will_do_list_item_diff'
+    ],
+    [
+        'ctrl+d',
+        'compare local and upstream files in an external tool',
+        'will_do_list_item_compare'
+    ],
+    [
+        'o',
+        'open the file',
+        'will_do_list_item_open'
+    ],
+    [
+        'alt+o',
+        'open upstream file',
+        'will_do_list_item_open_upstream'
+    ],
+    [
+        'u',
+        'update last-modified SHA of the file(s)',
+        'will_do_list_item_update_sha'
+    ],
+]
 # Message shown when the plugin is not configured.
 FIRST_USE_MESSAGE = '''
 Some preferences must be set before you can use the Intake Toolkit plugin.
@@ -169,17 +207,15 @@ class WillDoListUpdateWithDataCommand(sublime_plugin.TextCommand):
       self._add_line(name)
       self._add_line('Clean upstream: %s' % data['base_commit'])
       self._add_line('Last updated: %s' % strftime("%d %b %H:%M:%S", gmtime()))
-      self._add_line('Used merge tool: %s (set "%s" pref to change to one of '
-                     'the supported tools (patch, kdiff3, merge, p4merge)' %
+      self._add_line('')
+      self._add_line('Used merge tool: %s (set "%s" pref if you want to change\n'
+                     '                 to one of the other supported tools: '
+                     'patch, kdiff3, merge, p4merge)' %
                      (iwilldolist.get_mergetool(), PREF_NAME_MERGETOOL))
       self._add_line('')
       self._add_line('Keyboard shortcuts:')
-      self._add_line('  c - claim/unclaim the file(s)')
-      self._add_line('  m - run merge tool on the file(s)')
-      self._add_line('  d - show diff of the upstream changes')
-      self._add_line('  D - compare local and upstream files in an external tool')
-      self._add_line('  u - update last-modified SHA of the file(s)')
-      self._add_line('  o - open the file(s) (alt+o to open upstream version)')
+      for command in COMMANDS:
+        self._add_line('  %s - %s' % (command[0], command[1]))
       self._add_line('')
       initial_cursor_pos = len(self._get_output())
       for group in data['groups']:
@@ -379,25 +415,16 @@ class WriteGitDiffToViewCommand(sublime_plugin.TextCommand):
 
 
 class WillDoListItemShowPanelCommand(sublime_plugin.TextCommand):
-  COMMANDS = [
-      ['Claim/Unclaim (c)', 'will_do_list_item_toggle_claim'],
-      ['Merge (m)', 'will_do_list_item_merge'],
-      ['Diff (d)', 'will_do_list_item_diff'],
-      ['Diff files in external tool (D)', 'will_do_list_item_compare'],
-      ['Open copied (o)', 'will_do_list_item_open'],
-      ['Open upstream (alt+o)', 'will_do_list_item_open_upstream'],
-      ['Update last-modified (u)', 'will_do_list_item_update_sha']
-  ]
-
   def __init__(self, *args, **kwargs):
     super().__init__(*args, **kwargs)
     self._command_names = []
     self._index_to_command = {}
     # Create an array of actions and a mapping from index to the action.
     index = 0
-    for command_array in self.COMMANDS:
-      self._command_names.append(command_array[0])
-      self._index_to_command[index] = command_array[1]
+    for command_array in COMMANDS:
+      self._command_names.append(
+          '%s (%s)' % (command_array[1], command_array[0]))
+      self._index_to_command[index] = command_array[2]
       index += 1
 
   def _on_done(self, index):
