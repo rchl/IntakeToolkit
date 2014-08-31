@@ -27,6 +27,7 @@ CHECK_INTERVAL_SEC = 15
 PREF_NAME_USERNAME = 'will_do_list_username'
 PREF_NAME_REPOROOT = 'will_do_list_repo_root'
 PREF_NAME_AUTHTOKEN = 'will_do_list_auth_token'
+PREF_NAME_MERGETOOL = 'will_do_list_merge_tool'
 PACKAGE_PATH = 'Packages/IntakeToolkit'
 # Message shown when the plugin is not configured.
 FIRST_USE_MESSAGE = '''
@@ -168,6 +169,9 @@ class WillDoListUpdateWithDataCommand(sublime_plugin.TextCommand):
       self._add_line(name)
       self._add_line('Clean upstream: %s' % data['base_commit'])
       self._add_line('Last updated: %s' % strftime("%d %b %H:%M:%S", gmtime()))
+      self._add_line('Used merge tool: %s (set "%s" pref to change to one of '
+                     'the supported tools (patch, kdiff3, merge, p4merge)' %
+                     (iwilldolist.get_mergetool(), PREF_NAME_MERGETOOL))
       self._add_line('')
       self._add_line('Keyboard shortcuts:')
       self._add_line('  c - claim/unclaim the file(s)')
@@ -298,7 +302,7 @@ class WillDoListItemMergeCommand(sublime_plugin.TextCommand):
             'chromium_intake.py',
             '--end-commit', iwilldolist.get_upstream_sha(),
             '--dest', get_item_path(item),
-            '--mergetool=p4merge',
+            '--mergetool=%s' % iwilldolist.get_mergetool(),
             '--tempdir', tempfile.gettempdir()
         ]
         run_process(
@@ -354,7 +358,7 @@ class WillDoListItemCompareCommand(sublime_plugin.TextCommand):
     for item in iwilldolist.get_items_for_selection(view):
       copied_info = iwilldolist.get_copied_info_for_item(item)
       if copied_info:
-        run_process(['p4merge',
+        run_process([iwilldolist.get_mergetool(),
                      get_item_path(item),
                      copied_info['copied_from_path']],
                     iwilldolist.get_reporoot(),
@@ -483,6 +487,7 @@ class IWillDoList(object):
     self._username = view.settings().get(PREF_NAME_USERNAME)
     self._reporoot = view.settings().get(PREF_NAME_REPOROOT)
     self._auth_token = view.settings().get(PREF_NAME_AUTHTOKEN)
+    self._mergetool = view.settings().get(PREF_NAME_MERGETOOL, 'p4merge')
     if not self._initialized:
       # Import libintake package from the desktop tools dir. We have to do it
       # only once. We must also make the imported module be visible in the
@@ -501,6 +506,9 @@ class IWillDoList(object):
 
   def get_reporoot(self):
     return self._reporoot
+
+  def get_mergetool(self):
+    return self._mergetool
 
   def get_copied_info_for_item(self, item):
     absolute_path = get_item_path(item)
