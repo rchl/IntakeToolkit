@@ -374,6 +374,36 @@ class WriteGitDiffToViewCommand(sublime_plugin.TextCommand):
     selection.add(sublime.Region(0, 0))
 
 
+class WillDoListItemShowPanelCommand(sublime_plugin.TextCommand):
+  COMMANDS = [
+      ['Claim/Unclaim (c)', 'will_do_list_item_toggle_claim'],
+      ['Merge (m)', 'will_do_list_item_merge'],
+      ['Diff (d)', 'will_do_list_item_diff'],
+      ['Diff files in external tool (D)', 'will_do_list_item_compare'],
+      ['Open copied (o)', 'will_do_list_item_open'],
+      ['Open upstream (alt+o)', 'will_do_list_item_open_upstream'],
+      ['Update last-modified (u)', 'will_do_list_item_update_sha']
+  ]
+
+  def __init__(self, *args, **kwargs):
+    super().__init__(*args, **kwargs)
+    self._command_names = []
+    self._index_to_command = {}
+    # Create an array of actions and a mapping from index to the action.
+    index = 0
+    for command_array in self.COMMANDS:
+      self._command_names.append(command_array[0])
+      self._index_to_command[index] = command_array[1]
+      index += 1
+
+  def _on_done(self, index):
+    if index in self._index_to_command:
+      self.view.run_command(self._index_to_command[index])
+
+  def run(self, edit):
+    self.view.window().show_quick_panel(self._command_names, self._on_done)
+
+
 class EventObserver(sublime_plugin.EventListener):
   def on_activated(self, view):
     # Reuse existing IWillDo view.
