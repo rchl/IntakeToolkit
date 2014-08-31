@@ -173,6 +173,7 @@ class WillDoListUpdateWithDataCommand(sublime_plugin.TextCommand):
       self._add_line('  c - claim/unclaim the file(s)')
       self._add_line('  m - run merge tool on the file(s)')
       self._add_line('  d - show diff of the upstream changes')
+      self._add_line('  D - compare local and upstream files in an external tool')
       self._add_line('  u - update last-modified SHA of the file(s)')
       self._add_line('  o - open the file(s) (alt+o to open upstream version)')
       self._add_line('')
@@ -345,6 +346,19 @@ class WillDoListItemUpdateShaCommand(sublime_plugin.TextCommand):
       if copied_info:
         copied_info.set_last_sync(iwilldolist.get_upstream_sha())
     iwilldolist.trigger_update()
+
+
+class WillDoListItemCompareCommand(sublime_plugin.TextCommand):
+  def run(self, edit):
+    view = self.view
+    for item in iwilldolist.get_items_for_selection(view):
+      copied_info = iwilldolist.get_copied_info_for_item(item)
+      if copied_info:
+        run_process(['p4merge',
+                     get_item_path(item),
+                     copied_info['copied_from_path']],
+                    iwilldolist.get_reporoot(),
+                    dont_block=True)
 
 
 class WriteGitDiffToViewCommand(sublime_plugin.TextCommand):
