@@ -66,6 +66,11 @@ COMMANDS = [
         'update last-modified SHA of the file(s)',
         'will_do_list_item_update_sha'
     ],
+    [
+        'l',
+        'show git log affecting given file',
+        'will_do_list_item_git_log'
+    ],
 ]
 # Message shown when the plugin is not configured.
 FIRST_USE_MESSAGE = '''
@@ -396,6 +401,54 @@ class WillDoListItemUpdateShaCommand(sublime_plugin.TextCommand):
       if copied_info:
         copied_info.set_last_sync(iwilldolist.get_upstream_sha())
     iwilldolist.trigger_update()
+
+
+class WillDoListItemGitLogCommand(sublime_plugin.TextCommand):
+  def __init__(self, *args, **kwargs):
+    super().__init__(*args, **kwargs)
+    self._items_shas = []
+    self._file_path = ''
+
+  def on_item_selected(self, index):
+    if index == -1:
+      return
+    new_view = self.view.window().new_file()
+    sha = self._items_shas[index]
+    command = ['git', 'show', sha, '--exit-code', '--', self._file_path]
+    (output, returncode) = run_process(command, iwilldolist.get_reporoot())
+    new_view.set_name(' '.join(command))
+    new_view.set_scratch(True)
+    new_view.run_command("write_git_diff_to_view", {"content": output})
+
+  def run(self, edit):
+    self._items_shas = []
+    view = self.view
+    for item in iwilldolist.get_items_for_selection(view):
+      copied_info = iwilldolist.get_copied_info_for_item(item)
+      command = ['git',
+                 'log',
+                 '--pretty=%H;(%ar) %ad;%aE;%s',
+                 '--date=local',
+                 '--max-count=9000',
+                 '--exit-code',
+                 '--',
+                 get_item_path(item)]
+      (output, returncode) = run_process(command, iwilldolist.get_reporoot())
+      commands = []
+      if returncode == 1:
+        self._file_path = get_item_path(item)
+        for line in output.split('\n'):
+          if line.strip():
+            sha, date, author, summary = line.split(';')
+            commands.append(['%s <%s>' % (summary, author),
+                             '%s %s' % (date, sha)])
+            self._items_shas.append(sha)
+      else:
+        commands.append('No changes')
+
+      view.window().show_quick_panel(commands, self.on_item_selected)
+      # Can only handle one item.
+      return
 
 
 class WillDoListItemCompareCommand(sublime_plugin.TextCommand):

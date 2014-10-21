@@ -25,4 +25,7 @@
   {"keys": ["u"],
    "command": "will_do_list_item_update_sha",
    "context": [{"key": "selector", "operand": "text.iwilldo"}]},
+  {"keys": ["l"],
+   "command": "will_do_list_item_git_log",
+   "context": [{"key": "selector", "operand": "text.iwilldo"}]},
 ]
