@@ -10,7 +10,8 @@ import subprocess
 import sys
 import tempfile
 import threading
-import urllib
+import urllib.error
+import urllib.request
 from functools import partial
 from time import gmtime, sleep, strftime
 
