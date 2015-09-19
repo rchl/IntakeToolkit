@@ -184,8 +184,8 @@ class WillDoListShowCommand(sublime_plugin.TextCommand):
 
 class WillDoListStartUpdateIntervalCommand(sublime_plugin.TextCommand):
   def run(self, edit):
-    iwilldolist.initialize(self.view)
-    iwilldolist.trigger_update(repeating=True)
+    if iwilldolist.initialize(self.view):
+      iwilldolist.trigger_update(repeating=True)
 
 
 class WillDoListUpdateWithDataCommand(sublime_plugin.TextCommand):
@@ -616,21 +616,29 @@ class IWillDoList(object):
       self._repeating_thread = None
 
   def initialize(self, view):
-    self._view = view
-    self._view.settings().set('is_will_do_list_view', True)
-    self._username = view.settings().get(PREF_NAME_USERNAME)
     self._reporoot = view.settings().get(PREF_NAME_REPOROOT)
-    self._auth_token = view.settings().get(PREF_NAME_AUTHTOKEN)
-    self._mergetool = view.settings().get(PREF_NAME_MERGETOOL, 'p4merge')
     if not self._initialized:
       # Import libintake package from the desktop tools dir. We have to do it
       # only once. We must also make the imported module be visible in the
       # global scope.
-      sys.path.append(
-          os.path.join(self._reporoot, 'desktop', 'tools', 'libintake'))
+      lib_path = os.path.join(self._reporoot, 'desktop', 'tools', 'libintake')
+      if not os.path.exists(lib_path):
+        sublime.error_message(
+            'Required lib not found at %s! Make sure that %s preference is set '
+            'correctly in your project file.' % (lib_path, PREF_NAME_REPOROOT))
+        view.run_command('close')
+        return False
+      sys.path.append(lib_path)
       global CopiedFile
       from copied_file import CopiedFile
+
+    self._view = view
+    self._view.settings().set('is_will_do_list_view', True)
+    self._username = view.settings().get(PREF_NAME_USERNAME)
+    self._auth_token = view.settings().get(PREF_NAME_AUTHTOKEN)
+    self._mergetool = view.settings().get(PREF_NAME_MERGETOOL, 'p4merge')
     self._initialized = True
+    return True
 
   def get_view(self):
     return self._view
