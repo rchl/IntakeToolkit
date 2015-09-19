@@ -1,6 +1,7 @@
 [
-  {"keys": ["ctrl+f12"],
-   "command": "will_do_list_show"},
+  {"keys": ["ctrl+f12"], "command": "will_do_list_show"},
+  {"keys": ["n"], "command": "will_do_list_go_to_next",
+   "context": [{"key": "selector", "operand": "text.iwilldo"}]},
   {"keys": ["enter"],
    "command": "will_do_list_item_show_panel",
    "context": [{"key": "selector", "operand": "text.iwilldo.item"}]},

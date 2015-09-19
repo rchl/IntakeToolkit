@@ -72,6 +72,11 @@ COMMANDS = [
         'show git log affecting given file',
         'will_do_list_item_git_log'
     ],
+    [
+        'n',
+        'jump to my next unhandled file',
+        'will_do_list_go_to_next'
+    ],
 ]
 # Message shown when the plugin is not configured.
 FIRST_USE_MESSAGE = '''
@@ -111,12 +116,8 @@ def get_item_path(item):
                                      re.sub(r' \(ERROR\)$', '', item['name'])))
 
 
-def fixup_upstream_path(path):
-  """Modifies the upstream path so that it's relative to the reporoot."""
-  # TODO(rchlodnicki): This is a bit messy. EmbeddedInfo returns
-  # copied_from_path relative to the desktop repo (even for upstream files)
-  # while ExternalInfo returns absolute path. We'll force the path to be
-  # absolute so that it always works.
+def transform_path_absolute(path):
+  """Modifies the upstream path so that it's always absolute."""
   path = normalize_path(path).replace(iwilldolist.get_reporoot() + '/', '')
   if not path.startswith('chromium/src/'):
     path = 'chromium/src/%s' % path
@@ -216,6 +217,7 @@ class WillDoListUpdateWithDataCommand(sublime_plugin.TextCommand):
     view = self.view
     self._reset_line_data()
     line_to_item_mapping = {}
+    line_to_owners_mapping = {}
     initial_cursor_pos = 0
     if 'error' in data:
       self._add_line(data['error'])
@@ -239,12 +241,16 @@ class WillDoListUpdateWithDataCommand(sublime_plugin.TextCommand):
       for group in data['groups']:
         self._add_line('%s' % group['title'])
         for item in group['items']:
-          line_to_item_mapping[self._current_line] = item
+          current_line = self._current_line
+          owners = [owner.strip() for owner in group['title'].split(',')]
+          line_to_owners_mapping[current_line] = owners
+          line_to_item_mapping[current_line] = item
           self._add_line('  %s [%s] %s' % ('√' if item['closed'] else ' ',
                                            item['claimed_by'],
                                            item['name']))
         self._add_line('')
       iwilldolist.set_line_to_item_mapping(line_to_item_mapping)
+      iwilldolist.set_line_to_owners_mapping(line_to_owners_mapping)
       iwilldolist.set_upstream_sha(data['base_commit'])
 
     view.set_read_only(False)
@@ -264,7 +270,7 @@ class WillDoListUpdateWithDataCommand(sublime_plugin.TextCommand):
       selection.add(sublime.Region(initial_cursor_pos, initial_cursor_pos))
 
     # Highlight current user's mail.
-    regions = view.find_all('\\b%s@opera.com' % iwilldolist.get_username())
+    regions = view.find_all('\\b%s' % iwilldolist.get_usermail())
     view.add_regions('username_regions',
                      regions,
                      scope='whatever',
@@ -342,12 +348,23 @@ class WillDoListItemOpenCommand(sublime_plugin.TextCommand):
 
 
 class WillDoListItemOpenUpstreamCommand(sublime_plugin.TextCommand):
+  def is_enabled(self):
+    view = self.view
+    is_enabled = False
+    for item in iwilldolist.get_items_for_selection(view):
+      info = iwilldolist.get_copied_info_for_item(item)
+      if info:
+        is_enabled = True
+        break
+    return is_enabled
+
   def run(self, edit):
     view = self.view
     for item in iwilldolist.get_items_for_selection(view):
       info = iwilldolist.get_copied_info_for_item(item)
       if info:
-        view.window().open_file(fixup_upstream_path(info['copied_from_path']))
+        view.window().open_file(
+            transform_path_absolute(info['copied_from_path']))
 
 
 class WillDoListItemMergeCommand(sublime_plugin.TextCommand):
@@ -383,7 +400,7 @@ class WillDoListItemDiffCommand(sublime_plugin.TextCommand):
                                iwilldolist.get_upstream_sha()),
                    '--exit-code',
                    '--',
-                   fixup_upstream_path(copied_info['copied_from_path'])]
+                   transform_path_absolute(copied_info['copied_from_path'])]
         chromium_src = normalize_path(
             os.path.join(iwilldolist.get_reporoot(), 'chromium', 'src'))
         (output, returncode) = run_process(command, chromium_src)
@@ -452,6 +469,13 @@ class WillDoListItemGitLogCommand(sublime_plugin.TextCommand):
       return
 
 
+class WillDoListGoToNext(sublime_plugin.TextCommand):
+  def run(self, edit):
+    line_start = self.view.full_line(self.view.sel()[0]).a
+    line_regions = self.view.lines(sublime.Region(0, line_start))
+    iwilldolist.scroll_to_next_unhandled_item_after_line(len(line_regions) + 1)
+
+
 class WillDoListItemCompareCommand(sublime_plugin.TextCommand):
   def run(self, edit):
     view = self.view
@@ -460,7 +484,7 @@ class WillDoListItemCompareCommand(sublime_plugin.TextCommand):
       if copied_info:
         run_process([iwilldolist.get_mergetool(),
                      get_item_path(item),
-                     fixup_upstream_path(copied_info['copied_from_path'])],
+                     transform_path_absolute(copied_info['copied_from_path'])],
                     iwilldolist.get_reporoot(),
                     dont_block=True)
 
@@ -571,6 +595,8 @@ class IWillDoList(object):
     self._view = None
     # Mapping from the line number in generated IWillDo list to an item object.
     self._line_to_item_mapping = {}
+    # Mapping from the line number to owners array.
+    self._line_to_owners_mapping = {}
     # A dictionary of path: CopiedInfo values.
     self._copied_info_data = {}
     self._username = ''
@@ -612,6 +638,9 @@ class IWillDoList(object):
   def get_username(self):
     return self._username
 
+  def get_usermail(self):
+    return self._username + '@opera.com'
+
   def get_reporoot(self):
     return self._reporoot
 
@@ -624,11 +653,34 @@ class IWillDoList(object):
       return self._copied_info_data[absolute_path]
     return None
 
+  def scroll_to_next_unhandled_item_after_line(self, line):
+    """Returns copied info for the next unhandled item after line nr."""
+
+    lines_regions = self.get_view().lines(
+        sublime.Region(0, self.get_view().size()))
+    for i in self._line_to_item_mapping:
+      if i < line:
+        continue
+      copied_info = self.get_copied_info_for_item(
+          self._line_to_item_mapping[i])
+      owners = self._line_to_owners_mapping[i]
+      if (self.get_usermail() in owners and
+          (copied_info is None or
+              copied_info['last_synchronized'] != self.get_upstream_sha())):
+        self.get_view().sel().clear()
+        line_start = lines_regions[i].a
+        self.get_view().sel().add(sublime.Region(line_start, line_start))
+        self.get_view().show(lines_regions[i])
+        break
+
   def get_line_to_item_mapping(self):
     return self._line_to_item_mapping
 
   def set_line_to_item_mapping(self, mapping):
     self._line_to_item_mapping = mapping
+
+  def set_line_to_owners_mapping(self, mapping):
+    self._line_to_owners_mapping = mapping
 
   def get_upstream_sha(self):
     return self._upstream_sha
